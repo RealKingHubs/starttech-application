@@ -1,333 +1,631 @@
-````markdown id="o5a4oj"
 # RUNBOOK.md
 
-```md
+````md id="qj4v0m"
 # StartTech Operations Runbook
 
-This runbook documents the operational procedures, deployment checks, troubleshooting steps, and recovery actions used during the StartTech deployment.
+This runbook documents the actual operational procedures used while deploying, debugging, stabilizing, and maintaining the StartTech platform.
 
-This document reflects actual deployment issues encountered and how they were resolved.
+The guide focuses only on the real deployment issues, fixes, and workflows encountered during implementation.
 
 ---
 
-# Infrastructure Operations
+# Environment Overview
 
-## Terraform Deployment
+The platform consists of:
 
-### Initialize
+| Component | Technology |
+|---|---|
+| Frontend | React + Vite |
+| Backend | Go + Gin |
+| Container Runtime | Docker |
+| Infrastructure | Terraform |
+| CI/CD | GitHub Actions |
+| Backend Compute | EC2 Auto Scaling Group |
+| Load Balancing | Application Load Balancer |
+| Frontend Hosting | S3 Static Website Hosting |
+| Database | MongoDB Atlas |
+| Cache | Redis ElastiCache |
+| Secret Management | AWS SSM Parameter Store |
+| Monitoring | CloudWatch + SSM |
 
-```bash
+---
+
+# Operational Architecture
+
+```text
+Browser
+   ↓
+S3 Static Website
+   ↓
+Application Load Balancer
+   ↓
+EC2 Backend Containers
+   ↓
+MongoDB Atlas + Redis
+````
+
+---
+
+# CI/CD Operations
+
+Two deployment pipelines exist.
+
+---
+
+# 1. Infrastructure Pipeline
+
+Location:
+
+```text id="4htq5z"
+starttech-infra/.github/workflows/terraform.yml
+```
+
+Purpose:
+
+* Provision AWS infrastructure
+* Update networking
+* Create AWS services
+* Apply Terraform changes
+
+---
+
+# Common Infrastructure Commands
+
+## Initialize Terraform
+
+```bash id="a7vtdh"
 terraform init
 ```
 
-### Plan infrastructure
+---
 
-```bash
+## Review Infrastructure Changes
+
+```bash id="lcbhql"
 terraform plan
 ```
 
-### Apply infrastructure
+---
 
-```bash
+## Apply Infrastructure
+
+```bash id="cf7jlwm"
 terraform apply
 ```
 
-### Destroy infrastructure
+---
 
-```bash
-terraform destroy
+# 2. Application Pipeline
+
+Location:
+
+```text id="h8my0g"
+starttech-application/.github/workflows/backend-ci-cd.yml
 ```
 
-# Backend Operations
+Purpose:
 
-## Check ALB Health
+* Run backend tests
+* Build Docker images
+* Push images to ECR
+* Deploy backend containers
+* Build frontend
+* Upload frontend assets to S3
+* Run smoke tests
 
-```bash
+---
+
+# Deployment Workflow
+
+## Backend Deployment
+
+```text
+GitHub Push
+   ↓
+Go Tests
+   ↓
+Docker Build
+   ↓
+Push To ECR
+   ↓
+Deploy Script Executes
+   ↓
+EC2 Pulls Container
+   ↓
+Container Starts
+   ↓
+ALB Health Check Passes
+```
+
+---
+
+## Frontend Deployment
+
+```text
+GitHub Push
+   ↓
+Vite Build
+   ↓
+Generate dist/
+   ↓
+Upload dist/ To S3
+```
+
+---
+
+# SSM Parameter Management
+
+Sensitive credentials are stored in AWS Systems Manager Parameter Store.
+
+---
+
+# Parameters Used
+
+| Parameter Path              | Purpose                  |
+| --------------------------- | ------------------------ |
+| `/starttech/dev/mongo_uri`  | MongoDB Atlas connection |
+| `/starttech/dev/jwt_secret` | JWT signing key          |
+| `/starttech/dev/redis_host` | Redis endpoint           |
+| `/starttech/dev/db_name`    | Database name            |
+
+---
+
+# Creating Parameters
+
+Script used:
+
+```text id="xfwk7g"
+starttech-infra/scripts/create-ssm-parameters.sh
+```
+
+---
+
+# Important Security Change
+
+Early deployment versions used hardcoded secrets inside userdata scripts.
+
+This was later removed and replaced with:
+
+```text id="o6u5ff"
+AWS SSM Parameter Store
+```
+
+This reduced secret exposure significantly.
+
+---
+
+# Frontend Hosting Operations
+
+The frontend is hosted using:
+
+```text id="m4czt5"
+S3 Static Website Hosting
+```
+
+---
+
+# Why S3 Static Hosting Was Used
+
+The original design intended to use:
+
+```text id="j3s8s5"
+CloudFront + Private S3
+```
+
+However, CloudFront access was unavailable in the AWS account being used.
+
+The deployment strategy was redesigned around:
+
+```text id="6h6mgu"
+Public S3 Website Hosting
+```
+
+This directly affected:
+
+* authentication design
+* CORS handling
+* bucket policies
+* frontend deployment
+
+---
+
+# Frontend Deployment Command
+
+```bash id="0xxzv8"
+aws s3 sync Client/dist/ s3://<frontend-bucket> --delete
+```
+
+---
+
+# Backend Health Monitoring
+
+The backend is monitored through:
+
+* ALB health checks
+* GitHub smoke tests
+* Docker container status
+* CloudWatch logs
+
+---
+
+# Common Operational Issue:
+
+# ALB Returning 502 Bad Gateway
+
+## Symptoms
+
+* Frontend fails to connect
+* Smoke tests fail
+* ALB target group becomes unhealthy
+* Browser shows 502 Bad Gateway
+
+---
+
+# Root Cause Encountered
+
+During deployment:
+
+* backend containers were not running correctly
+* EC2 instances registered as unhealthy
+* ALB health checks failed
+
+This caused:
+
+```text id="r4rq84"
+Target.FailedHealthChecks
+```
+
+---
+
+# How It Was Investigated
+
+The backend instances were private and inaccessible through SSH.
+
+AWS Systems Manager was used instead.
+
+---
+
+# SSM Debugging Commands
+
+## List Docker Containers
+
+```bash id="7yjlwm"
+aws ssm send-command \
+  --instance-ids "<instance-id>" \
+  --document-name "AWS-RunShellScript" \
+  --parameters commands="docker ps -a"
+```
+
+---
+
+## Inspect Backend Logs
+
+```bash id="wxpkic"
+aws ssm send-command \
+  --instance-ids "<instance-id>" \
+  --document-name "AWS-RunShellScript" \
+  --parameters commands="docker logs backend --tail 200"
+```
+
+---
+
+## Check Docker Runtime
+
+```bash id="0fhtj4"
+aws ssm send-command \
+  --instance-ids "<instance-id>" \
+  --document-name "AWS-RunShellScript" \
+  --parameters commands="journalctl -u docker --no-pager -n 50"
+```
+
+---
+
+# Common Issue:
+
+# No Such Container: backend
+
+## Symptoms
+
+```text id="9jtnwe"
+Error response from daemon: No such container: backend
+```
+
+---
+
+# Meaning
+
+The deployment script completed incorrectly or the backend container failed before startup completed.
+
+This was one of the main indicators that backend deployment failed before ALB health checks.
+
+---
+
+# How To Verify Target Health
+
+## Check Target Group State
+
+```bash id="wz6fkv"
 aws elbv2 describe-target-health \
   --target-group-arn <target-group-arn>
 ```
 
-Healthy targets should show:
+---
+
+# Healthy Output
 
 ```text
-healthy
+"State": "healthy"
 ```
 
-## Check Docker Containers
+---
 
-```bash
-docker ps -a
-```
-
-## Check Backend Logs
-
-```bash
-docker logs backend
-```
-
-## Check SSM Parameters
-
-```bash
-aws ssm get-parameters-by-path \
-  --path "/starttech/dev/"
-```
-
-# CI/CD Operations
-
-Deployment pipeline:
-
-1. Run Go tests
-2. Run security scans
-3. Build Docker image
-4. Push image to ECR
-5. Deploy backend
-6. Build frontend
-7. Deploy frontend to S3
-8. Run smoke tests
-
-Workflow file:
+# Unhealthy Output
 
 ```text
-.github/workflows/backend-ci-cd.yml
+"State": "unhealthy"
+"Reason": "Target.FailedHealthChecks"
 ```
 
-# Troubleshooting Guide
+---
 
-# 1. Terraform Module Errors
+# CORS Troubleshooting
 
-## Symptoms
+CORS became one of the largest runtime issues after migrating to S3 website hosting.
 
-```text
-Reference to undeclared resource
-```
+---
 
-or:
+# Symptoms
 
-```text
-Reference to undeclared module
-```
+Browser errors:
 
-## Cause
-
-Resources were referenced directly across Terraform modules.
-
-## Resolution
-
-Pass required values using:
-
-- outputs
-- variables
-
-instead of direct resource references.
-
-# 2. S3 Bucket Policy Fails
-
-## Symptoms
-
-```text
-AccessDenied: PutBucketPolicy
-```
-
-## Cause
-
-S3 Block Public Access settings blocked website policies.
-
-## Resolution
-
-Adjusted public access configuration to support static website hosting.
-
-# 3. ALB Returns 502 Bad Gateway
-
-## Symptoms
-
-- frontend cannot reach backend
-- health checks fail
-- target marked unhealthy
-
-## Cause
-
-Backend container failed to start.
-
-## Verification
-
-### Check target health
-
-```bash
-aws elbv2 describe-target-health
-```
-
-### Check containers
-
-```bash
-docker ps -a
-```
-
-### Check logs
-
-```bash
-docker logs backend
-```
-
-## Resolution
-
-- redeploy backend
-- verify Docker image exists in ECR
-- verify userdata execution
-- verify backend listens on port 8080
-
-# 4. Registration Fails From Frontend
-
-## Symptoms
-
-Browser console errors:
-
-```text
+```text id="w72h4p"
 No 'Access-Control-Allow-Origin' header
 ```
 
+and:
+
+```text id="dnt3c4"
+Response to preflight request doesn't pass access control check
+```
+
+---
+
+# Root Cause
+
+Terraform dynamically generated frontend bucket names:
+
+```text id="7s0h9d"
+dev-starttech-frontend-ee4128bc
+```
+
+The backend originally trusted only one hardcoded frontend origin.
+
+Whenever the bucket changed, the browser blocked requests.
+
+---
+
+# Final CORS Fix
+
+The backend middleware was redesigned to:
+
+* support localhost development
+* allow dynamic S3 website origins
+* correctly handle OPTIONS requests
+
+---
+
+# Authentication Troubleshooting
+
+Authentication changed significantly during deployment.
+
+---
+
+# Original Problem
+
+The frontend originally depended on cookies for authentication.
+
+This failed because:
+
+* frontend and backend were cross-origin
+* S3 website hosting complicated cookie handling
+* browser restrictions blocked session persistence
+
+---
+
+# Symptoms
+
+* login appeared successful
+* authenticated requests failed afterward
+* `/users/me` requests returned errors
+* frontend displayed "Registration Failed"
+
+---
+
+# Final Authentication Fix
+
+The frontend was redesigned to:
+
+* store JWT tokens in localStorage
+* send bearer tokens in Authorization headers
+* stop depending on browser cookies
+
+---
+
+# Frontend Environment Configuration
+
+The frontend requires:
+
+```env id="z7j6lz"
+VITE_API_BASE_URL=http://<alb-dns>
+```
+
+This value is injected during GitHub Actions deployment using repository secrets.
+
+---
+
+# Common Issue:
+
+# Frontend Calls Wrong Backend URL
+
+## Symptoms
+
+Frontend requests fail with:
+
+```text id="9f4jlwm"
+404 Not Found
+```
+
 or:
 
-```text
-CORS policy blocked request
+```text id="pb5m5j"
+ERR_NETWORK
 ```
 
-## Cause
+---
 
-Terraform generated a new S3 bucket URL but backend still trusted an old hardcoded origin.
+# Fix
 
-## Resolution
+Verify:
 
-Updated backend middleware to dynamically allow StartTech S3 website origins.
+1. GitHub secret exists
+2. `.env` file is generated during CI/CD
+3. Frontend rebuild completed successfully
+4. Browser is loading latest deployed assets
 
-# 5. Login Appears Successful But Session Fails
+---
 
-## Symptoms
+# Smoke Test Operations
 
-- login succeeds
-- `/users/me` fails
-- frontend appears logged out
+The deployment pipeline includes automated smoke tests.
 
-## Cause
+Script:
 
-Frontend relied on cookies across origins.
-
-S3 website frontend and ALB backend are separate origins.
-
-## Resolution
-
-Authentication was redesigned around JWT Bearer tokens stored in localStorage.
-
-# 6. Backend Health Check Fails
-
-## Symptoms
-
-ALB target shows:
-
-```text
-Target.FailedHealthChecks
+```text id="91klm7"
+scripts/health-check.sh
 ```
 
-## Cause
+---
 
-Backend container missing or crashed.
+# Smoke Test Failure Symptoms
 
-## Verification
-
-```bash
-docker ps -a
-docker logs backend
+```text id="q1qj5r"
+Health check failed
 ```
 
-## Resolution
+---
 
-Fix deployment script and redeploy container.
+# Meaning
 
-# 7. SSM Command Failures
+Usually indicates:
 
-## Symptoms
+* backend container not running
+* ALB unhealthy target
+* failed deployment
+* application crash
 
-```text
-InvalidInstanceId
-```
+---
 
-or failed SSM commands.
+# CloudWatch Operations
 
-## Cause
+CloudWatch is used for:
 
-- wrong instance ID
-- unhealthy instance
-- terminated instance
+* backend logs
+* deployment visibility
+* runtime debugging
 
-## Resolution
+---
 
-Verify active EC2 instance ID before sending commands.
+# Log Group
 
-# Frontend Deployment Operations
-
-## Build frontend
-
-```bash
-npm run build
-```
-
-## Deploy frontend
-
-```bash
-aws s3 sync Client/dist/ s3://<bucket-name> --delete
-```
-
-# Backend Health Validation
-
-Health endpoint:
-
-```bash
-curl http://<alb-dns>/health
-```
-
-Expected response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-# Monitoring
-
-## CloudWatch Logs
-
-Primary backend logs:
-
-```text
+```text id="v84q4m"
 /starttech/backend
 ```
 
-# Recovery Procedure
+---
 
-If deployment becomes unstable:
+# Recommended Runtime Checks
 
-1. Verify EC2 instance health
-2. Verify ALB target health
-3. Verify backend container status
-4. Verify Docker logs
-5. Verify ECR image exists
-6. Verify SSM secrets
-7. Redeploy workflow
+After deployment:
 
-# Important Lessons From Deployment
+1. Verify target health
+2. Verify backend container exists
+3. Verify frontend loads
+4. Test registration flow
+5. Test login flow
+6. Test authenticated endpoints
+7. Inspect CloudWatch for runtime errors
 
-The deployment evolved significantly during implementation.
+---
 
-## Key lessons learned
+# Operational Lessons Learned
 
-- CloudFront limitations can reshape architecture decisions
-- S3 static hosting requires careful CORS handling
-- Cross-origin cookie auth is unreliable for this setup
-- JWT Bearer authentication is more stable for static hosting
-- Secrets should never remain hardcoded in userdata
-- ALB health checks are critical for debugging deployments
-- Dynamic infrastructure requires flexible backend configuration
+Several major deployment decisions changed during implementation.
 
-These operational fixes transformed the deployment from an unstable prototype into a repeatable cloud deployment workflow.
+---
+
+# 1. CloudFront Was Removed
+
+Reason:
+
+* AWS account limitation
+
+Impact:
+
+* frontend architecture redesign
+* authentication redesign
+* CORS redesign
+
+---
+
+# 2. Cookie Authentication Failed
+
+Reason:
+
+* cross-origin browser restrictions
+
+Impact:
+
+* migration to JWT token auth
+
+---
+
+# 3. Hardcoded Secrets Were Removed
+
+Reason:
+
+* security risk
+
+Impact:
+
+* migration to AWS SSM Parameter Store
+
+---
+
+# 4. SSM Became Essential
+
+Reason:
+
+* backend instances were private
+
+Impact:
+
+* operational debugging depended heavily on SSM Run Command
+
+---
+
+# Final Operational Notes
+
+This deployment was stabilized through iterative troubleshooting rather than a purely theoretical setup.
+
+The final operational workflow now supports:
+
+* repeatable deployments
+* automated infrastructure provisioning
+* automated backend deployment
+* automated frontend deployment
+* secure secret management
+* runtime debugging
+* production-style operational monitoring
+
 ```
-````
+```

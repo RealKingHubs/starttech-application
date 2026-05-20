@@ -1,281 +1,565 @@
-````markdown
 # ARCHITECTURE.md
 
-```md
+````md
 # StartTech System Architecture
 
-# Overview
+This document explains the actual architecture implemented for the StartTech platform, including the infrastructure decisions, deployment flow, networking design, authentication redesign, and operational fixes introduced during deployment.
 
-StartTech is a distributed cloud-native application deployed on AWS.
-
-The system consists of:
-
-- React frontend hosted on Amazon S3
-- Go backend running inside Docker containers on EC2
-- Application Load Balancer for routing
-- Redis cache using ElastiCache
-- MongoDB Atlas database
-- GitHub Actions CI/CD pipeline
-- Terraform-managed infrastructure
+The architecture evolved during implementation as real deployment constraints and runtime issues were discovered.
 
 ---
 
 # High-Level Architecture
 
 ```text
-Users
-   │
-   ▼
-S3 Static Website Hosting
-(React Frontend)
-   │
-   ▼
-Application Load Balancer
-   │
-   ▼
-EC2 Auto Scaling Group
-(Go API Containers)
-   │
-   ├── Redis ElastiCache
-   │
-   └── MongoDB Atlas
+                        ┌─────────────────────┐
+                        │     GitHub          │
+                        │   Source Control    │
+                        └─────────┬───────────┘
+                                  │
+                                  │ Push
+                                  ▼
+                    ┌─────────────────────────┐
+                    │   GitHub Actions CI/CD  │
+                    └─────────┬───────────────┘
+                              │
+              ┌───────────────┴────────────────┐
+              │                                │
+              ▼                                ▼
+   ┌────────────────────┐         ┌────────────────────┐
+   │ Terraform Pipeline │         │ Application Pipeline│
+   └─────────┬──────────┘         └─────────┬──────────┘
+             │                              │
+             ▼                              ▼
+ ┌────────────────────────┐      ┌────────────────────────┐
+ │ AWS Infrastructure     │      │ Docker Image Build     │
+ │ Provisioning           │      │ + Frontend Build       │
+ └─────────┬──────────────┘      └─────────┬──────────────┘
+           │                               │
+           │                               ▼
+           │                   ┌────────────────────────┐
+           │                   │ Amazon ECR             │
+           │                   └─────────┬──────────────┘
+           │                             │
+           ▼                             ▼
+ ┌────────────────────────┐   ┌──────────────────────────┐
+ │ VPC                    │   │ EC2 Auto Scaling Group   │
+ │ Subnets                │   │ Dockerized Go Backend    │
+ │ Security Groups        │   └─────────┬────────────────┘
+ │ ALB                    │             │
+ │ Redis                  │             ▼
+ └─────────┬──────────────┘   ┌──────────────────────────┐
+           │                  │ Application Load Balancer│
+           │                  └─────────┬────────────────┘
+           │                            │
+           ▼                            ▼
+ ┌────────────────────────┐   ┌──────────────────────────┐
+ │ S3 Static Hosting      │   │ MongoDB Atlas            │
+ │ React Frontend         │   │ External Database        │
+ └────────────────────────┘   └──────────────────────────┘
+````
+
+---
+
+# Infrastructure Architecture
+
+The infrastructure was provisioned entirely using Terraform.
+
+The environment was separated into reusable modules to simplify management and improve maintainability.
+
+---
+
+# Terraform Module Design
+
+```text
+terraform/
+│
+├── modules/
+│   ├── networking/
+│   ├── security/
+│   ├── storage/
+│   ├── compute/
+│   ├── loadbalancer/
+│   └── monitoring/
+│
+├── environments/
+│   └── dev/
+│
+└── main.tf
 ```
 
-# Frontend Architecture
+---
 
-## Technology Stack
+# Networking Architecture
 
-- React + Vite
+The infrastructure uses a custom VPC with both public and private subnets.
 
-## Hosting Design
+---
 
-Originally the frontend was intended to use:
+## Public Subnets
 
-- CloudFront + private S3 bucket
+Public subnets contain internet-facing resources:
 
-CloudFront permissions were unavailable in the deployment environment.
+* Application Load Balancer
+* NAT access
+* Public routing
 
-The architecture was therefore redesigned around:
+These subnets allow inbound traffic from users.
 
-- Amazon S3 Static Website Hosting
+---
 
-This changed several parts of the system:
+## Private Subnets
 
-| Change | Architectural Impact |
-|---|---|
-| Public S3 hosting | Frontend publicly accessible |
-| Cross-origin backend access | Required CORS handling |
-| Dynamic bucket URLs | Required flexible origin validation |
-| Cookie auth instability | Required JWT auth redesign |
+Private subnets contain internal resources:
 
-# Backend Architecture
+* Backend EC2 instances
+* Redis cluster
 
-## Technology Stack
+These services are intentionally isolated from direct internet access.
 
-- Go + Gin
+---
 
-## Runtime
+# Why The Backend Was Kept Private
 
-The backend runs inside Docker containers on EC2 instances.
+The backend API is not directly exposed publicly.
 
-Containers are pulled from:
+Instead:
 
-- Amazon Elastic Container Registry (ECR)
+```text
+User → ALB → Backend EC2
+```
 
-## Load Balancing
+Benefits:
 
-Traffic enters through:
+* Reduced attack surface
+* Controlled traffic entry point
+* Centralized health checking
+* Easier scaling
 
-- Application Load Balancer
+---
+
+# Application Load Balancer
+
+The Application Load Balancer acts as the single public entry point for backend traffic.
 
 Responsibilities:
 
-- distribute traffic
-- perform health checks
-- route requests to healthy instances
+* Route HTTP requests
+* Perform health checks
+* Forward traffic to healthy EC2 targets
+* Detect failed backend containers
 
-Health endpoint:
+---
+
+# ALB Health Checks
+
+The ALB continuously checks backend health.
+
+During deployment, backend containers initially failed to start correctly, causing:
 
 ```text
-/health
+502 Bad Gateway
 ```
 
-Backend application port:
+and:
 
 ```text
-8080
+Target.FailedHealthChecks
 ```
 
-## Compute Layer
+This issue became one of the main operational debugging tasks during deployment.
 
-Backend compute is managed using:
+---
 
-- EC2 Auto Scaling Group
+# Compute Layer
 
-Launch Templates bootstrap instances automatically.
+The backend application runs on EC2 instances managed by an Auto Scaling Group.
 
-### Startup process
+Each instance:
 
-1. Install Docker
-2. Authenticate to ECR
-3. Retrieve secrets from SSM
-4. Create environment configuration
-5. Pull Docker image
-6. Start backend container
+1. Pulls backend Docker images from ECR
+2. Starts the API container
+3. Registers with the ALB target group
 
-# Networking
+---
 
-Infrastructure is deployed inside a custom VPC.
+# Why Docker Was Used
 
-## Components
+The backend was containerized to ensure:
 
-| Component | Purpose |
-|---|---|
-| Public Subnets | ALB + EC2 |
-| Private Subnets | Redis |
-| Security Groups | Access control |
-| Internet Gateway | External access |
+* consistent runtime environments
+* reproducible deployments
+* simpler rollback capability
+* cleaner CI/CD automation
 
-# Database Architecture
+---
 
-Primary database:
+# Container Deployment Flow
 
-- MongoDB Atlas
+```text
+GitHub Actions
+    ↓
+Build Docker Image
+    ↓
+Push To ECR
+    ↓
+EC2 Pulls Image
+    ↓
+Container Starts
+    ↓
+ALB Health Check Passes
+```
 
-MongoDB Atlas was used instead of self-hosted MongoDB to simplify infrastructure management.
+---
 
-# Caching Layer
+# Frontend Architecture
 
-Caching uses:
+The frontend was built using:
 
-- Amazon ElastiCache Redis
+* React
+* TypeScript
+* Vite
 
-Redis is used for:
+The frontend is deployed as static assets to Amazon S3.
 
-- username caching
-- performance optimization
-- reducing repeated database reads
+---
 
-# Secret Management
+# Original Frontend Design
 
-Secrets are stored in:
+The original deployment design was:
 
-- AWS Systems Manager Parameter Store
+```text
+CloudFront → Private S3 Bucket
+```
 
-Secrets were intentionally removed from:
+This architecture would have provided:
 
-- Terraform variables
-- userdata hardcoding
-- GitHub repository code
+* CDN caching
+* HTTPS edge delivery
+* private bucket access through OAC
 
-This improved security and deployment flexibility.
+---
 
-# Authentication Architecture
+# Why CloudFront Was Removed
 
-## Original Design
+CloudFront distribution access was unavailable in the AWS account being used.
 
-Initial authentication relied on cookies.
+Because of this limitation, the frontend architecture was redesigned to:
 
-This failed reliably because:
+```text
+Public S3 Static Website Hosting
+```
 
-- frontend and backend were cross-origin
-- S3 website hosting does not work well with cross-site cookies
+This changed multiple parts of the system:
 
-## Final Design
+* frontend hosting strategy
+* bucket policies
+* authentication flow
+* browser behavior
+* CORS handling
 
-Authentication was redesigned around:
+---
 
-- JWT Bearer Tokens
+# Final Frontend Architecture
 
-### Flow
+```text
+Browser
+   ↓
+S3 Static Website Endpoint
+   ↓
+Application Load Balancer
+   ↓
+Backend API
+```
 
-1. User logs in
-2. Backend returns JWT token
-3. Frontend stores token in localStorage
-4. Axios interceptor attaches token
-5. Backend validates Authorization header
+---
 
-This became the stable production authentication model.
+# S3 Static Hosting Design
+
+The frontend bucket uses:
+
+* static website hosting
+* public read access
+* frontend asset deployment through CI/CD
+
+Terraform dynamically creates bucket names using:
+
+```tf
+bucket = "${var.environment}-starttech-frontend-${random_id.suffix.hex}"
+```
+
+This prevents bucket name collisions globally.
+
+---
+
+# Authentication Architecture Evolution
+
+Authentication changed significantly during deployment.
+
+---
+
+# Original Authentication Design
+
+The frontend originally relied on browser cookies for session persistence.
+
+This worked locally but failed in production because:
+
+* frontend and backend existed on different origins
+* S3 static website hosting introduced cross-origin limitations
+* browser cookie handling became unreliable
+
+This caused:
+
+* login failures
+* registration failures
+* failed authenticated requests
+
+---
+
+# Final Authentication Design
+
+The backend already returned JWT tokens during login.
+
+The frontend was redesigned to:
+
+* store JWT tokens in localStorage
+* send Authorization headers automatically
+* use bearer-token authentication for all protected requests
+
+---
+
+# Why Token Authentication Was Chosen
+
+Token-based authentication removed dependency on:
+
+* cross-origin cookies
+* browser cookie policies
+* credential forwarding problems
+
+This made authentication stable across:
+
+```text
+S3 Static Website → ALB Backend
+```
+
+---
 
 # CORS Architecture
 
-Because frontend bucket names change dynamically:
+CORS became a major deployment issue.
+
+---
+
+# Root Cause
+
+Terraform dynamically generates frontend bucket names.
+
+Example:
 
 ```text
-dev-starttech-frontend-<random-id>
+dev-starttech-frontend-ee4128bc
 ```
 
-hardcoded origins caused deployment instability.
+The backend originally used hardcoded frontend origins.
+
+Whenever the bucket changed, browser requests failed.
+
+---
+
+# CORS Redesign
 
 The backend middleware was redesigned to:
 
-- support localhost development
-- support dynamic StartTech S3 website origins
-- handle browser preflight requests correctly
+* allow localhost development
+* support dynamic S3 website origins
+* correctly process OPTIONS preflight requests
+
+This fixed browser request blocking.
+
+---
+
+# Redis Architecture
+
+Redis was introduced using Amazon ElastiCache.
+
+Purpose:
+
+* caching
+* username lookup optimization
+* reducing repeated database queries
+
+Redis runs inside private subnets and is inaccessible publicly.
+
+---
+
+# MongoDB Architecture
+
+MongoDB Atlas was used instead of self-hosted MongoDB.
+
+Reasons:
+
+* managed database operations
+* reduced infrastructure overhead
+* easier cloud integration
+
+The backend connects securely using a connection URI stored in SSM Parameter Store.
+
+---
+
+# Secret Management Architecture
+
+Secrets were originally hardcoded during early setup.
+
+This was later redesigned using AWS Systems Manager Parameter Store.
+
+---
+
+# Parameters Stored
+
+| Parameter     | Type         |
+| ------------- | ------------ |
+| MongoDB URI   | SecureString |
+| JWT Secret    | SecureString |
+| Redis Host    | String       |
+| Database Name | String       |
+
+---
+
+# Why SSM Was Introduced
+
+This removed secrets from:
+
+* Terraform
+* userdata scripts
+* deployment pipelines
+* repository files
+
+It also improved operational security significantly.
+
+---
 
 # CI/CD Architecture
 
-GitHub Actions pipeline stages:
+Two separate GitHub Actions pipelines were implemented.
+
+---
+
+# Infrastructure Pipeline
+
+Location:
 
 ```text
-Push To GitHub
-   │
-   ▼
-Run Go Tests
-   │
-   ▼
-Run Security Scans
-   │
-   ▼
-Build Docker Image
-   │
-   ▼
-Push Image To ECR
-   │
-   ▼
-Deploy Backend To EC2
-   │
-   ▼
-Build Frontend
-   │
-   ▼
-Deploy Frontend To S3
+starttech-infra/.github/workflows/terraform.yml
 ```
 
-# Monitoring & Operations
+Responsibilities:
 
-## Monitoring tools used
+* Terraform validation
+* Terraform planning
+* Terraform apply
 
-| Tool | Purpose |
-|---|---|
-| CloudWatch Logs | Backend logs |
-| ALB Health Checks | Service health |
-| SSM Run Command | Remote diagnostics |
+---
 
-# Major Operational Challenges
+# Application Pipeline
 
-| Problem | Resolution |
-|---|---|
-| Terraform module references | Fixed variable/output structure |
-| CloudFront unavailable | Switched to S3 website hosting |
-| Bucket policy failures | Updated S3 public access settings |
-| CORS failures | Dynamic origin validation |
-| Cookie auth failures | JWT token authentication |
-| Backend unhealthy targets | Fixed deployment and userdata |
-| Hardcoded secrets | Migrated to SSM |
+Location:
 
-# Final Architecture Characteristics
-
-The final system provides:
-
-- Infrastructure as Code
-- Automated deployments
-- Centralized secret management
-- Containerized backend services
-- Scalable compute layer
-- Static frontend hosting
-- Token-based authentication
-- Operational monitoring
-- Production-style cloud deployment
+```text
+starttech-application/.github/workflows/backend-ci-cd.yml
 ```
-````
+
+Responsibilities:
+
+* Go testing
+* Docker build
+* ECR push
+* Frontend build
+* S3 deployment
+* Backend deployment
+* Smoke testing
+
+---
+
+# Why Frontend Deployment Exists In Application CI/CD
+
+Frontend assets are application artifacts.
+
+Terraform provisions infrastructure only.
+
+Application CI/CD handles:
+
+```text
+React Build → S3 Upload
+```
+
+This separation keeps infrastructure and application deployment independent.
+
+---
+
+# Runtime Debugging Architecture
+
+AWS Systems Manager became critical during deployment debugging.
+
+---
+
+# Why SSM Was Important
+
+Backend instances existed inside private infrastructure and could not be accessed directly.
+
+SSM allowed operational debugging without SSH access.
+
+Commands used included:
+
+```bash
+aws ssm send-command
+```
+
+and:
+
+```bash
+aws ssm get-command-invocation
+```
+
+---
+
+# Problems Diagnosed Using SSM
+
+SSM helped identify:
+
+* backend container failures
+* missing containers
+* unhealthy targets
+* Docker runtime issues
+* deployment script failures
+
+---
+
+# Monitoring And Logging
+
+Monitoring used:
+
+* CloudWatch Logs
+* ALB Target Health
+* GitHub Actions logs
+* Docker logs
+* SSM command output
+
+---
+
+# Final Architecture Summary
+
+The final deployed architecture reflects several real deployment-driven design decisions.
+
+The most significant changes included:
+
+* replacing CloudFront with S3 static hosting
+* redesigning authentication from cookies to JWT tokens
+* implementing dynamic CORS handling
+* migrating secrets into SSM Parameter Store
+* using SSM for operational debugging
+* separating infrastructure and application pipelines
+
+The resulting system is a fully automated AWS deployment platform built from real operational troubleshooting and iterative infrastructure refinement.
+
+```
+```

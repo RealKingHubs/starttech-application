@@ -1,26 +1,27 @@
-````markdown
-# StartTech Infrastructure & Deployment Guide
+# README.md
 
-StartTech is a cloud-native full-stack task management application deployed entirely on AWS using Infrastructure as Code and CI/CD automation.
+````md
+# StartTech Infrastructure And Application Platform
 
-This project was built and deployed with:
+StartTech is a full-stack cloud-native task management platform deployed on AWS using Terraform, Docker, GitHub Actions, and a production-style DevOps workflow.
 
-- Terraform for infrastructure provisioning
-- Docker for backend containerization
-- GitHub Actions for CI/CD
-- Amazon S3 for frontend hosting
-- Amazon EC2 for backend compute
-- Application Load Balancer for traffic routing
-- Amazon ECR for container registry
-- Amazon ElastiCache Redis for caching
-- MongoDB Atlas for persistent storage
-- AWS Systems Manager Parameter Store for secret management
+The project combines:
 
-The deployment architecture evolved during implementation because CloudFront distribution access was unavailable in the AWS environment being used. That limitation directly influenced how frontend hosting, authentication, and CORS handling were designed.
+- Infrastructure as Code with Terraform
+- Containerized backend deployment
+- Automated CI/CD pipelines
+- AWS networking and load balancing
+- Static frontend hosting on S3
+- Secure secret management with AWS SSM
+- Redis caching
+- MongoDB Atlas integration
+- Operational monitoring and troubleshooting workflows
+
+This repository reflects the actual engineering decisions, deployment issues, fixes, and architecture evolution during the build process.
 
 ---
 
-# Repository Structure
+# Project Structure
 
 ```text
 Starttech/
@@ -30,264 +31,146 @@ Starttech/
 │   ├── Client/
 │   │   ├── src/
 │   │   ├── public/
+│   │   ├── package.json
 │   │   └── vite.config.ts
 │   │
-│   └── Server/MuchToDo/
-│       ├── cmd/api/
-│       ├── internal/
-│       ├── Dockerfile
-│       └── go.mod
+│   ├── Server/
+│   │   └── MuchToDo/
+│   │       ├── cmd/api/
+│   │       ├── internal/
+│   │       ├── docs/
+│   │       ├── Dockerfile
+│   │       └── go.mod
+│   │
+│   ├── scripts/
+│   │   ├── deploy-backend.sh
+│   │   └── health-check.sh
+│   │
+│   └── .github/
+│       └── workflows/
+│           └── backend-ci-cd.yml
 │
 ├── starttech-infra/
-│   └── terraform/
-│       ├── modules/
-│       ├── environments/
-│       └── main.tf
+│   │
+│   ├── terraform/
+│   │   ├── modules/
+│   │   ├── environments/
+│   │   └── main.tf
+│   │
+│   ├── scripts/
+│   │   └── create-ssm-parameters.sh
+│   │
+│   └── .github/
+│       └── workflows/
+│           └── terraform.yml
 │
-└── .github/
-    └── workflows/
-        └── backend-ci-cd.yml
+├── README.md
+├── ARCHITECTURE.md
+└── RUNBOOK.md
 ````
 
-# Final Deployment Architecture
+---
+
+# What The Platform Does
+
+The application allows users to:
+
+* Create accounts
+* Authenticate securely
+* Create and manage tasks
+* Persist task data in MongoDB
+* Cache frequently accessed data with Redis
+
+The platform was designed to simulate a production-ready AWS deployment pipeline rather than a simple local development setup.
+
+---
+
+# Infrastructure Overview
+
+The infrastructure is provisioned entirely with Terraform.
+
+## AWS Services Used
+
+| Service                   | Purpose                         |
+| ------------------------- | ------------------------------- |
+| VPC                       | Network isolation               |
+| Public Subnets            | ALB and public-facing resources |
+| Private Subnets           | Backend and Redis               |
+| Security Groups           | Network access control          |
+| Application Load Balancer | Traffic routing                 |
+| EC2 Auto Scaling Group    | Backend compute layer           |
+| ECR                       | Docker image registry           |
+| S3                        | Frontend static hosting         |
+| ElastiCache Redis         | Caching layer                   |
+| SSM Parameter Store       | Secret management               |
+| IAM + OIDC                | GitHub Actions authentication   |
+| CloudWatch                | Logging and monitoring          |
+
+---
+
+# Why The Frontend Uses S3 Static Hosting
+
+The original architecture used:
 
 ```text
-Users
-   │
-   ▼
+CloudFront → Private S3 Bucket
+```
+
+However, CloudFront distribution access was unavailable in the AWS account being used.
+
+Because of this limitation, the frontend deployment strategy was redesigned to use:
+
+```text
+Public S3 Static Website Hosting
+```
+
+This changed several parts of the system:
+
+* Bucket access policies
+* Frontend deployment process
+* Browser authentication flow
+* CORS configuration
+* Token handling strategy
+
+The final deployment architecture became:
+
+```text
+Browser
+   ↓
 S3 Static Website Hosting
-(React + Vite Frontend)
-   │
-   ▼
+   ↓
 Application Load Balancer
-   │
-   ▼
-EC2 Auto Scaling Group
-(Dockerized Go API)
-   │
-   ├── Redis ElastiCache
-   │
-   └── MongoDB Atlas
+   ↓
+EC2 Backend Containers
 ```
 
-# Why The Architecture Changed
+---
 
-The original plan was to deploy the frontend using:
+# Backend Deployment Flow
 
-* CloudFront + private S3 bucket
+The backend application is written in Go using Gin.
 
-This could not be completed because CloudFront distribution permissions were unavailable in the AWS account being used.
+The backend is:
 
-Instead of blocking the deployment completely, the frontend architecture was redesigned to use:
+1. Built into a Docker image
+2. Pushed to Amazon ECR
+3. Pulled onto EC2 instances
+4. Started through deployment automation scripts
 
-* Amazon S3 Static Website Hosting
+Deployment happens automatically through GitHub Actions.
 
-This decision introduced several downstream changes:
+---
 
-| Change                       | Reason                                   |
-| ---------------------------- | ---------------------------------------- |
-| Public S3 website hosting    | CloudFront unavailable                   |
-| Dynamic S3 website URLs      | Bucket names generated by Terraform      |
-| CORS configuration updates   | Frontend/backend became cross-origin     |
-| JWT token authentication     | Cookies became unreliable across origins |
-| Public bucket policy changes | Required for website hosting             |
+# Frontend Deployment Flow
 
-The project eventually stabilized around a static-hosted frontend with token-based authentication.
+The frontend is built with React and Vite.
 
-# Infrastructure Provisioning
+The deployment pipeline:
 
-Infrastructure is managed entirely using Terraform.
-
-## Main infrastructure components
-
-| Component           | Purpose           |
-| ------------------- | ----------------- |
-| VPC                 | Networking        |
-| Public Subnets      | ALB + EC2         |
-| Private Subnets     | Redis             |
-| Security Groups     | Traffic control   |
-| EC2 Launch Template | Backend instances |
-| Auto Scaling Group  | Scaling           |
-| ALB                 | Traffic routing   |
-| ECR                 | Docker registry   |
-| S3                  | Frontend hosting  |
-| ElastiCache Redis   | Caching           |
-| IAM Roles           | Permissions       |
-| SSM Parameter Store | Secrets           |
-
-# Deploying Infrastructure
-
-## 1. Configure AWS CLI
-
-```bash
-aws configure
-```
-
-## 2. Navigate To Terraform
-
-```bash
-cd starttech-infra/terraform
-```
-
-## 3. Initialize Terraform
-
-```bash
-terraform init
-```
-
-## 4. Review Infrastructure
-
-```bash
-terraform plan
-```
-
-## 5. Apply Infrastructure
-
-```bash
-terraform apply
-```
-
-# Terraform Issues Encountered
-
-Several Terraform issues were discovered during deployment.
-
-## Module Reference Errors
-
-Initial security group configuration referenced resources incorrectly across modules.
-
-Example issue:
-
-```text
-Reference to undeclared resource
-```
-
-This happened because:
-
-```text
-aws_vpc.this.id
-```
-
-was referenced inside a module where the VPC resource did not exist.
-
-The fix was to properly pass:
-
-```text
-vpc_id
-```
-
-through module variables and outputs.
-
-## S3 Bucket Policy Errors
-
-After converting the frontend to static website hosting, Terraform failed while attaching the bucket policy.
-
-Error:
-
-```text
-AccessDenied: PutBucketPolicy
-```
-
-Cause:
-
-```text
-BlockPublicPolicy = true
-```
-
-was preventing website access policies.
-
-The bucket configuration was updated to allow website hosting while still keeping unnecessary public access blocked.
-
-# Secret Management
-
-Initially, secrets were hardcoded inside EC2 userdata scripts.
-
-This included:
-
-* MongoDB URI
-* JWT secret
-* Redis endpoint
-
-This was replaced with:
-
-* AWS Systems Manager Parameter Store
-
-for better security and cleaner deployments.
-
-## SSM Parameters Created
-
-| Parameter                   | Purpose                  |
-| --------------------------- | ------------------------ |
-| `/starttech/dev/mongo_uri`  | MongoDB Atlas connection |
-| `/starttech/dev/jwt_secret` | JWT signing secret       |
-| `/starttech/dev/redis_host` | Redis endpoint           |
-| `/starttech/dev/db_name`    | Database name            |
-
-## Secret Provisioning Script
-
-Secrets were stored using AWS CLI:
-
-```bash
-aws ssm put-parameter
-```
-
-The script generated a secure JWT key dynamically using OpenSSL.
-
-# Backend Deployment
-
-The backend is a Dockerized Go application.
-
-## Deployment flow
-
-```text
-GitHub Push
-   │
-   ▼
-Run Tests
-   │
-   ▼
-Build Docker Image
-   │
-   ▼
-Push To Amazon ECR
-   │
-   ▼
-Deploy To EC2
-   │
-   ▼
-Health Check Validation
-```
-
-# CI/CD Pipeline
-
-GitHub Actions handles:
-
-* Go testing
-* Go vet
-* Gosec scanning
-* Trivy image scanning
-* Docker build
-* ECR push
-* EC2 deployment
-* Frontend build
-* S3 frontend deployment
-* Smoke testing
-
-Workflow file:
-
-```text
-.github/workflows/backend-ci-cd.yml
-```
-
-# Frontend Deployment
-
-Frontend is deployed using:
-
-* Amazon S3 Static Website Hosting
-
-## Deployment process
-
-1. Build frontend using Vite
-2. Upload generated files to S3
+1. Builds the frontend application
+2. Injects the backend API URL dynamically
+3. Generates optimized static assets
+4. Uploads the build output to S3
 
 Deployment command:
 
@@ -295,147 +178,296 @@ Deployment command:
 aws s3 sync Client/dist/ s3://<frontend-bucket> --delete
 ```
 
-# Frontend Environment Configuration
+---
 
-The frontend backend URL is injected during CI/CD using GitHub Secrets.
+# Authentication Design Evolution
 
-Environment variable:
+## Original Design
+
+The frontend originally depended on browser cookies for authentication.
+
+This worked locally but failed in the deployed AWS environment because:
+
+* Frontend and backend were hosted on different origins
+* S3 static website hosting introduced cross-origin browser restrictions
+* Cookies became unreliable across origins
+
+This caused:
+
+* Registration failures
+* Login session failures
+* Browser CORS blocking
+
+---
+
+## Final Design
+
+The authentication system was redesigned to use JWT bearer tokens.
+
+The backend already returned JWT tokens during login, so the frontend was updated to:
+
+* Store JWT tokens in localStorage
+* Automatically attach Authorization headers
+* Use bearer-token authentication for protected routes
+
+This completely removed the dependency on cross-site cookies.
+
+---
+
+# CORS Redesign
+
+Terraform generates frontend buckets dynamically using random suffixes:
+
+```tf
+bucket = "${var.environment}-starttech-frontend-${random_id.suffix.hex}"
+```
+
+This meant frontend URLs constantly changed.
+
+Originally, the backend used hardcoded CORS origins, which caused browser requests to fail whenever the bucket name changed.
+
+The backend CORS middleware was redesigned to:
+
+* Support localhost development
+* Support dynamically generated S3 website URLs
+* Handle OPTIONS preflight requests correctly
+
+This fixed frontend registration and authentication failures.
+
+---
+
+# Secret Management
+
+Sensitive credentials were initially hardcoded during early infrastructure setup.
+
+This was replaced with AWS Systems Manager Parameter Store.
+
+Secrets now include:
+
+* MongoDB connection URI
+* JWT signing secret
+* Redis endpoint
+* Database name
+
+Parameters are stored using:
+
+```bash
+aws ssm put-parameter
+```
+
+Secure values use:
+
+```text
+SecureString
+```
+
+---
+
+# CI/CD Pipelines
+
+Two separate GitHub Actions pipelines exist.
+
+---
+
+## Application Pipeline
+
+Location:
+
+```text
+starttech-application/.github/workflows/backend-ci-cd.yml
+```
+
+Responsibilities:
+
+* Go testing
+* Docker image build
+* Security scanning
+* Push image to ECR
+* Deploy backend
+* Build frontend
+* Deploy frontend to S3
+* Smoke testing
+
+---
+
+## Infrastructure Pipeline
+
+Location:
+
+```text
+starttech-infra/.github/workflows/terraform.yml
+```
+
+Responsibilities:
+
+* Terraform validation
+* Terraform formatting checks
+* Terraform planning
+* Terraform apply
+
+---
+
+# Security Improvements Made During The Project
+
+Several security improvements were introduced during development:
+
+* Removal of hardcoded secrets
+* Migration to SSM Parameter Store
+* Restricted security groups
+* Private subnet backend deployment
+* Redis isolation
+* JWT-based authentication
+* GitHub OIDC authentication
+* Reduced IAM credential exposure
+
+---
+
+# Operational Challenges Solved
+
+The project involved several real deployment issues:
+
+## 1. CloudFront Access Restriction
+
+CloudFront could not be used in the AWS account.
+
+Solution:
+
+* Migrated frontend to S3 static website hosting
+
+---
+
+## 2. Backend Health Check Failures
+
+The backend container failed to start correctly, causing:
+
+* ALB 502 errors
+* Unhealthy target groups
+* Smoke test failures
+
+Solution:
+
+* Debugged EC2 instances using AWS SSM
+* Investigated Docker container state
+* Corrected deployment issues
+
+---
+
+## 3. CORS Failures
+
+Frontend requests were blocked by browser CORS protection.
+
+Solution:
+
+* Redesigned backend middleware for dynamic origins
+
+---
+
+## 4. Authentication Failures
+
+Cross-origin cookies failed in the browser.
+
+Solution:
+
+* Migrated frontend to JWT token authentication
+
+---
+
+# Local Development
+
+## Backend
+
+```bash
+cd starttech-application/Server/MuchToDo
+
+go mod download
+go run cmd/api/main.go
+```
+
+---
+
+## Frontend
+
+```bash
+cd starttech-application/Client
+
+npm install
+npm run dev
+```
+
+---
+
+# Terraform Deployment
+
+```bash
+cd starttech-infra/terraform
+
+terraform init
+terraform plan
+terraform apply
+```
+
+---
+
+# Environment Variables
+
+## Frontend
 
 ```env
 VITE_API_BASE_URL=http://<alb-dns>
 ```
 
-This prevented hardcoding backend URLs inside the frontend source code.
+Stored in GitHub Secrets for CI/CD deployment.
 
-# Authentication Problems Encountered
+---
 
-Initially, authentication depended on browser cookies.
+## Backend
 
-This caused major issues because:
+Loaded from AWS SSM Parameter Store.
 
-* frontend and backend were hosted on different origins
-* S3 website endpoints do not behave well with cross-site cookies
-* authenticated requests failed after login
+---
 
-Symptoms included:
+# Monitoring And Troubleshooting
 
-* registration failures
-* login appearing successful but user session failing
-* `/users/me` returning CORS errors
+Operational debugging was performed using:
 
-# Final Authentication Design
+* AWS SSM Run Command
+* CloudWatch Logs
+* ALB Target Health
+* Docker container logs
+* GitHub Actions logs
 
-The backend already returned JWT tokens during login.
-
-The frontend was updated to:
-
-* store JWT tokens in localStorage
-* attach Bearer tokens automatically using Axios interceptors
-* clear tokens during logout
-* restore auth state on refresh
-
-This completely stabilized frontend authentication.
-
-# CORS Problems Encountered
-
-Terraform generates frontend bucket names dynamically:
+Detailed operational procedures are documented in:
 
 ```text
-dev-starttech-frontend-<random-suffix>
+RUNBOOK.md
 ```
 
-The backend originally trusted only a single hardcoded frontend URL.
+---
 
-This caused browser failures like:
+# Documentation
 
-```text
-No 'Access-Control-Allow-Origin' header
-```
+| File            | Purpose                          |
+| --------------- | -------------------------------- |
+| README.md       | Project overview and setup       |
+| ARCHITECTURE.md | Infrastructure and system design |
+| RUNBOOK.md      | Operations and troubleshooting   |
 
-The backend CORS middleware was redesigned to:
+---
 
-* allow localhost during development
-* dynamically allow StartTech S3 website origins
-* correctly handle OPTIONS preflight requests
+# Final Notes
 
-This resolved:
+This project evolved significantly during deployment.
 
-* registration failures
-* login failures
-* authenticated API request failures
+Several production-style problems were encountered and solved in real time, including:
 
-# Health Check Problems Encountered
+* browser CORS restrictions
+* container deployment failures
+* ALB health check failures
+* static hosting limitations
+* authentication redesign
+* secret management migration
 
-At one stage the ALB returned:
-
-```text
-502 Bad Gateway
-```
-
-Root cause:
-
-* The backend container was not successfully running on EC2.
-
-Troubleshooting included:
-
-* checking ALB target health
-* querying EC2 through SSM
-* checking Docker container status
-* inspecting deployment scripts
-
-Eventually the deployment was fixed and targets became healthy.
-
-# Useful Commands
-
-## Terraform
-
-```bash
-terraform init
-terraform plan
-terraform apply
-terraform destroy
-```
-
-## Check ALB Health
-
-```bash
-aws elbv2 describe-target-health \
-  --target-group-arn <target-group-arn>
-```
-
-## Check Running Containers
-
-```bash
-docker ps -a
-```
-
-## Check Backend Logs
-
-```bash
-docker logs backend
-```
-
-## Check SSM Parameters
-
-```bash
-aws ssm get-parameters-by-path \
-  --path "/starttech/dev/"
-```
-
-# Final Outcome
-
-The final deployment achieved:
-
-* automated infrastructure provisioning
-* automated CI/CD deployment
-* secure secret handling
-* scalable backend deployment
-* stable frontend hosting
-* token-based authentication
-* dynamic CORS handling
-* cloud-native architecture
-
-More importantly, the deployment evolved through real infrastructure debugging and operational fixes rather than staying as a purely theoretical setup.
+The final platform reflects the operational decisions made to stabilize and successfully deploy the system on AWS.
 
 ```
 ```
