@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, setAuthToken } from '@/lib/apiClient';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -39,6 +39,9 @@ function Login() {
             return response.data;
         },
         onSuccess: (data) => {
+            if (data.token) {
+                setAuthToken(data.token);
+            }
             // Update the user in the auth context
             setUser(data.user);
             // Also set in query cache
