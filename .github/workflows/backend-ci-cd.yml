@@ -55,7 +55,6 @@ jobs:
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-      # Non-blocking security scan for assessment/demo environment
       - name: Run Gosec
         run: |
           $(go env GOPATH)/bin/gosec \
@@ -115,6 +114,7 @@ jobs:
         run: |
           docker build \
             -t $ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REPOSITORY:latest \
             .
 
       # =========================================
@@ -132,23 +132,42 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       # =========================================
-      # TAG IMAGE
+      # TAG IMAGE WITH SHA
       # =========================================
 
-      - name: Tag Docker Image
+      - name: Tag SHA Image
         run: |
           docker tag \
             $ECR_REPOSITORY:$IMAGE_TAG \
             ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
 
       # =========================================
-      # PUSH IMAGE
+      # TAG IMAGE WITH LATEST
       # =========================================
 
-      - name: Push Docker Image
+      - name: Tag Latest Image
+        run: |
+          docker tag \
+            $ECR_REPOSITORY:latest \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+
+      # =========================================
+      # PUSH SHA IMAGE
+      # =========================================
+
+      - name: Push SHA Image
         run: |
           docker push \
             ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # =========================================
+      # PUSH LATEST IMAGE
+      # =========================================
+
+      - name: Push Latest Image
+        run: |
+          docker push \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
       # =========================================
       # OUTPUT IMAGE URI
@@ -234,6 +253,30 @@ jobs:
       - name: Deploy Frontend
         run: |
           aws s3 sync Client/dist/ s3://dev-starttech-frontend-ee4128bc --delete
+
+      # =========================================
+      # WAIT FOR ALB HEALTH
+      # =========================================
+
+      - name: Wait for Backend Health
+        run: |
+          echo "Waiting for backend to become healthy..."
+
+          for i in {1..20}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://${{ secrets.ALB_DNS_NAME }}/health || true)
+
+            if [ "$STATUS" = "200" ]; then
+              echo "Backend is healthy!"
+              exit 0
+            fi
+
+            echo "Attempt $i failed. Retrying in 15 seconds..."
+            sleep 15
+          done
+
+          echo "Backend health check failed."
+          exit 1
 
       # =========================================
       # SMOKE TEST
