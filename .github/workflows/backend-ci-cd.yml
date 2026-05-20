@@ -8,6 +8,7 @@ on:
 
     paths:
       - "Server/**"
+      - "Client/**"
       - ".github/workflows/backend-ci-cd.yml"
 
 permissions:
@@ -192,12 +193,47 @@ jobs:
           ./scripts/deploy-backend.sh \
             ${{ needs.build-and-push.outputs.image }}
 
-      #=========================================
-      #DEPLOY FRONTEND
-      #=========================================
+      # =========================================
+      # SETUP NODEJS
+      # =========================================
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # =========================================
+      # INSTALL FRONTEND DEPENDENCIES
+      # =========================================
+
+      - name: Install Frontend Dependencies
+        run: npm install
+        working-directory: Client
+
+      # =========================================
+      # CREATE FRONTEND ENV FILE
+      # =========================================
+
+      - name: Create Frontend Environment File
+        run: |
+          echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}" >> .env
+        working-directory: Client
+
+      # =========================================
+      # BUILD FRONTEND
+      # =========================================
+
+      - name: Build Frontend
+        run: npm run build
+        working-directory: Client
+
+      # =========================================
+      # DEPLOY FRONTEND
+      # =========================================
+
       - name: Deploy Frontend
         run: |
-          aws s3 sync dist/ s3://dev-starttech-frontend-ee4128bc --delete
+          aws s3 sync Client/dist/ s3://dev-starttech-frontend-ee4128bc --delete
 
       # =========================================
       # SMOKE TEST
@@ -215,4 +251,4 @@ jobs:
       # =========================================
 
       - name: Deployment Success
-        run: echo "Backend deployment completed successfully"
+        run: echo "Backend and frontend deployment completed successfully"
