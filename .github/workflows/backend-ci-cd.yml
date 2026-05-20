@@ -192,6 +192,13 @@ jobs:
           ./scripts/deploy-backend.sh \
             ${{ needs.build-and-push.outputs.image }}
 
+      #=========================================
+      #DEPLOY FRONTEND
+      #=========================================
+      - name: Deploy Frontend
+        run: |
+          aws s3 sync dist/ s3://dev-starttech-frontend-ee4128bc --delete
+
       # =========================================
       # SMOKE TEST
       # =========================================

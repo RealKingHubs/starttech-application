@@ -29,5 +29,7 @@ aws ssm send-command \
       -e MONGO_URI=$MONGO_URI \
       -e DB_NAME=$DB_NAME \
       -e JWT_SECRET_KEY=$JWT_SECRET \
+      -e ENABLE_CACHE=true \
+      -e REDIS_ADDR='dev-redis.yd4jsv.0001.use1.cache.amazonaws.com' \
       '"$IMAGE"'"
   ]'
