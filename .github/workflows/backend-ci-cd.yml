@@ -7,8 +7,10 @@ on:
       - feature/full-stack
 
     paths:
-      - "Server/**"
-      - "Client/**"
+      - "backend/**"
+      - "scripts/deploy-backend.sh"
+      - "scripts/health-check.sh"
+      - "scripts/rollback.sh"
       - ".github/workflows/backend-ci-cd.yml"
 
 permissions:
@@ -31,7 +33,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: Server/MuchToDo
+        working-directory: backend
 
     steps:
       - name: Checkout Code
@@ -72,7 +74,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: Server/MuchToDo
+        working-directory: backend
 
     outputs:
       image: ${{ steps.image.outputs.image }}
@@ -213,48 +215,6 @@ jobs:
             ${{ needs.build-and-push.outputs.image }}
 
       # =========================================
-      # SETUP NODEJS
-      # =========================================
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      # =========================================
-      # INSTALL FRONTEND DEPENDENCIES
-      # =========================================
-
-      - name: Install Frontend Dependencies
-        run: npm install
-        working-directory: Client
-
-      # =========================================
-      # CREATE FRONTEND ENV FILE
-      # =========================================
-
-      - name: Create Frontend Environment File
-        run: |
-          echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}" >> .env
-        working-directory: Client
-
-      # =========================================
-      # BUILD FRONTEND
-      # =========================================
-
-      - name: Build Frontend
-        run: npm run build
-        working-directory: Client
-
-      # =========================================
-      # DEPLOY FRONTEND
-      # =========================================
-
-      - name: Deploy Frontend
-        run: |
-          aws s3 sync Client/dist/ s3://dev-starttech-frontend-ee4128bc --delete
-
-      # =========================================
       # WAIT FOR ALB HEALTH
       # =========================================
 
@@ -294,4 +254,4 @@ jobs:
       # =========================================
 
       - name: Deployment Success
-        run: echo "Backend and frontend deployment completed successfully!"
+        run: echo "Backend deployment completed successfully!"

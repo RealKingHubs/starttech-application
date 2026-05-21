@@ -232,7 +232,7 @@ This directly affected:
 # Frontend Deployment Command
 
 ```bash id="0xxzv8"
-aws s3 sync Client/dist/ s3://<frontend-bucket> --delete
+aws s3 sync frontend/dist/ s3://<frontend-bucket> --delete
 ```
 
 ---

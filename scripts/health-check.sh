@@ -1,6 +1,14 @@
 #!/bin/bash
+set -euo pipefail
 
-URL=$1/health
+BASE_URL="${1:-}"
+
+if [ -z "$BASE_URL" ]; then
+  echo "Usage: $0 <base-url>"
+  exit 1
+fi
+
+URL="${BASE_URL%/}/health"
 
 echo "Checking health endpoint..."
 
@@ -9,7 +17,7 @@ SLEEP_SECONDS=10
 
 for ((i=1; i<=MAX_RETRIES; i++))
 do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" $URL)
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
 
   if [ "$STATUS" -eq 200 ]; then
     echo "Health check passed"

@@ -36,3 +36,15 @@ docker-compose.test.yaml
 mongodb.key
 mongo-keyfile
 
+# frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.tanstack/
+
+# local Go cache
+.gocache/
+
+# legacy pre-restructure directories kept locally if locked by Windows
+Client/
+Server/
+

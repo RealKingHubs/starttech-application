@@ -46,7 +46,7 @@ With static S3 website hosting, the frontend and backend are cross-origin. That 
 
 File changed:
 
-- `starttech-application/Server/MuchToDo/internal/middleware/cors.go`
+- `starttech-application/backend/internal/middleware/cors.go`
 - `starttech-infra/terraform/modules/compute/userdata.sh`
 
 What I changed:
@@ -64,7 +64,7 @@ This fixes sign up and sign in requests coming from the current S3 website URL e
 
 File changed:
 
-- `starttech-application/Client/src/lib/apiClient.ts`
+- `starttech-application/frontend/src/lib/apiClient.ts`
 
 What I changed:
 
@@ -80,7 +80,7 @@ This removes the frontend’s dependency on cross-site cookies for authenticated
 
 File changed:
 
-- `starttech-application/Client/src/routes/login.tsx`
+- `starttech-application/frontend/src/routes/login.tsx`
 
 What I changed:
 
@@ -95,7 +95,7 @@ The backend already returns a usable token. Saving it on successful login lets t
 
 File changed:
 
-- `starttech-application/Client/src/context/AuthContext.tsx`
+- `starttech-application/frontend/src/context/AuthContext.tsx`
 
 What I changed:
 

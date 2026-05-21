@@ -1,0 +1,7 @@
+.git
+.github
+.env
+.env.*
+Dockerfile
+docker-compose.yaml
+README.md

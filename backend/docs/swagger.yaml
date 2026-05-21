@@ -1,0 +1,650 @@
+basePath: /
+definitions:
+  models.ChangePasswordDTO:
+    properties:
+      newPassword:
+        minLength: 8
+        type: string
+      oldPassword:
+        type: string
+    required:
+    - newPassword
+    - oldPassword
+    type: object
+  models.CreateTodoDTO:
+    properties:
+      description:
+        type: string
+      title:
+        type: string
+    required:
+    - title
+    type: object
+  models.LoginUserDTO:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  models.PublicUser:
+    properties:
+      firstName:
+        type: string
+      id:
+        type: string
+      lastName:
+        type: string
+      username:
+        type: string
+    type: object
+  models.RegisterUserDTO:
+    properties:
+      firstName:
+        type: string
+      lastName:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      username:
+        minLength: 3
+        type: string
+    required:
+    - firstName
+    - lastName
+    - password
+    - username
+    type: object
+  models.Todo:
+    properties:
+      completed:
+        type: boolean
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+      userId:
+        description: Link to the User
+        type: string
+    required:
+    - title
+    type: object
+  models.UpdateTodoDTO:
+    properties:
+      completed:
+        type: boolean
+      description:
+        type: string
+      title:
+        type: string
+    type: object
+  models.UpdateUserDTO:
+    properties:
+      firstName:
+        type: string
+      lastName:
+        type: string
+      username:
+        type: string
+    type: object
+info:
+  contact:
+    email: innocent@altschoolafrica.com
+    name: API Support - Innocent
+    url: https://github.com/Innocent9712
+  description: This is an API for MuchToDo application with user authentication.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: MuchToDo API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Logs in a user with username and password, returning a session token.
+        The token is returned in the response body and as an httpOnly cookie.
+      parameters:
+      - description: User Login Credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginUserDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns a success message, the JWT token, and user details
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Invalid username or password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Log in a user
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: Clears the user's session cookie
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Logged out successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Log out a user
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user account with the provided details
+      parameters:
+      - description: User Registration Info
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterUserDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: '{''message'': ''User registered successfully''}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Username is already taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register a new user
+      tags:
+      - auth
+  /auth/username-check/{username}:
+    get:
+      consumes:
+      - application/json
+      description: Checks the database and cache to see if a username is already in
+        use
+      parameters:
+      - description: Username to check
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns true if the username is available
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Username is too short
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Database error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Check if a username is available
+      tags:
+      - auth
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: get the status of the database and cache (if enabled)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: A map showing the status of each service
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: A map showing the status of each service, one or more will
+            be 'down'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Show the status of server connections
+      tags:
+      - health
+  /todos:
+    get:
+      description: Retrieves a list of all todo items belonging to the user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Todo'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get all todos for the current user
+      tags:
+      - todos
+    post:
+      consumes:
+      - application/json
+      description: Adds a new todo item to the current user's list
+      parameters:
+      - description: Todo Create Object
+        in: body
+        name: todo
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateTodoDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Todo'
+        "400":
+          description: Invalid input
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new todo
+      tags:
+      - todos
+  /todos/{id}:
+    delete:
+      description: Deletes a specific todo item by its ID
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Todo deleted successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid ID format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Todo not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a todo
+      tags:
+      - todos
+    get:
+      description: Retrieves a specific todo item by its ID, if it belongs to the
+        user
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Todo'
+        "400":
+          description: Invalid ID format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Todo not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a single todo by ID
+      tags:
+      - todos
+    put:
+      consumes:
+      - application/json
+      description: Updates the details of a specific todo item
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Todo Update Object
+        in: body
+        name: todo
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateTodoDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Todo updated successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input or ID format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Todo not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a todo
+      tags:
+      - todos
+  /users/me:
+    delete:
+      description: Permanently deletes the authenticated user's account and all their
+        associated data (e.g., todos)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Account deleted successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete current user's account
+      tags:
+      - users
+    get:
+      description: Retrieves the profile of the user corresponding to the provided
+        JWT
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.PublicUser'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get current user's profile
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Updates the first name, last name, and/or username of the authenticated
+        user
+      parameters:
+      - description: User Update Info
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateUserDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Profile updated successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Username is already taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update current user's profile
+      tags:
+      - users
+  /users/me/password:
+    put:
+      consumes:
+      - application/json
+      description: Allows an authenticated user to change their password
+      parameters:
+      - description: Old and New Passwords
+        in: body
+        name: passwords
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChangePasswordDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{''message'': ''Password changed successfully''}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized or incorrect old password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Change current user's password
+      tags:
+      - users
+securityDefinitions:
+  ApiKeyAuth:
+    description: '"Type ''Bearer'' followed by a space and a JWT token."'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

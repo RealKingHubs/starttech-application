@@ -1,11 +1,22 @@
 #!/bin/bash
+set -euo pipefail
 
-IMAGE=$1
+IMAGE="${1:-}"
+
+if [ -z "$IMAGE" ]; then
+  echo "Usage: $0 <image-uri>"
+  exit 1
+fi
 
 INSTANCE_IDS=$(aws ssm describe-instance-information \
   --region us-east-1 \
   --query "InstanceInformationList[*].InstanceId" \
   --output text)
+
+if [ -z "$INSTANCE_IDS" ]; then
+  echo "No managed EC2 instances were returned by SSM."
+  exit 1
+fi
 
 aws ssm send-command \
   --instance-ids $INSTANCE_IDS \
