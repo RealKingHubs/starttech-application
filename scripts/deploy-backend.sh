@@ -26,6 +26,7 @@ aws ssm send-command \
     "MONGO_URI=$(aws ssm get-parameter --name /starttech/dev/mongo_uri --with-decryption --query Parameter.Value --output text --region us-east-1)",
     "JWT_SECRET=$(aws ssm get-parameter --name /starttech/dev/jwt_secret --with-decryption --query Parameter.Value --output text --region us-east-1)",
     "DB_NAME=$(aws ssm get-parameter --name /starttech/dev/db_name --query Parameter.Value --output text --region us-east-1)",
+    "REDIS_HOST=$(aws ssm get-parameter --name /starttech/dev/redis_host --query Parameter.Value --output text --region us-east-1)",
 
     "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 093796422475.dkr.ecr.us-east-1.amazonaws.com",
 
@@ -41,6 +42,6 @@ aws ssm send-command \
       -e DB_NAME=$DB_NAME \
       -e JWT_SECRET_KEY=$JWT_SECRET \
       -e ENABLE_CACHE=true \
-      -e REDIS_ADDR='dev-redis.yd4jsv.0001.use1.cache.amazonaws.com' \
+      -e REDIS_ADDR=$REDIS_HOST:6379 \
       '"$IMAGE"'"
   ]'

@@ -56,5 +56,5 @@ jobs:
         run: |
           chmod +x scripts/deploy-frontend.sh
           ./scripts/deploy-frontend.sh \
-            ${{ secrets.FRONTEND_BUCKET_NAME }}
+            ${{ vars.FRONTEND_BUCKET_NAME }}
         working-directory: .
