@@ -2,33 +2,52 @@
 set -euo pipefail
 
 IMAGE="${1:-}"
+REGION="${AWS_REGION:-us-east-1}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+BACKEND_TAG_NAME="${BACKEND_TAG_NAME:-${ENVIRONMENT}-backend}"
 
 if [ -z "$IMAGE" ]; then
   echo "Usage: $0 <image-uri>"
   exit 1
 fi
 
+EC2_INSTANCE_IDS=$(aws ec2 describe-instances \
+  --region "$REGION" \
+  --filters \
+    "Name=tag:Name,Values=$BACKEND_TAG_NAME" \
+    "Name=instance-state-name,Values=running" \
+  --query "Reservations[*].Instances[*].InstanceId" \
+  --output text)
+
+if [ -z "$EC2_INSTANCE_IDS" ]; then
+  echo "No running backend EC2 instances found for tag Name=$BACKEND_TAG_NAME in region $REGION."
+  exit 1
+fi
+
 INSTANCE_IDS=$(aws ssm describe-instance-information \
-  --region us-east-1 \
+  --region "$REGION" \
+  --filters "Key=InstanceIds,Values=$EC2_INSTANCE_IDS" \
   --query "InstanceInformationList[*].InstanceId" \
   --output text)
 
 if [ -z "$INSTANCE_IDS" ]; then
-  echo "No managed EC2 instances were returned by SSM."
+  echo "Backend EC2 instances exist, but none are registered as SSM managed instances in region $REGION."
+  echo "Expected backend tag: Name=$BACKEND_TAG_NAME"
+  echo "EC2 instances found: $EC2_INSTANCE_IDS"
   exit 1
 fi
 
 aws ssm send-command \
   --instance-ids $INSTANCE_IDS \
   --document-name "AWS-RunShellScript" \
-  --region us-east-1 \
+  --region "$REGION" \
   --parameters 'commands=[
-    "MONGO_URI=$(aws ssm get-parameter --name /starttech/dev/mongo_uri --with-decryption --query Parameter.Value --output text --region us-east-1)",
-    "JWT_SECRET=$(aws ssm get-parameter --name /starttech/dev/jwt_secret --with-decryption --query Parameter.Value --output text --region us-east-1)",
-    "DB_NAME=$(aws ssm get-parameter --name /starttech/dev/db_name --query Parameter.Value --output text --region us-east-1)",
-    "REDIS_HOST=$(aws ssm get-parameter --name /starttech/dev/redis_host --query Parameter.Value --output text --region us-east-1)",
+    "MONGO_URI=$(aws ssm get-parameter --name /starttech/dev/mongo_uri --with-decryption --query Parameter.Value --output text --region '"$REGION"')",
+    "JWT_SECRET=$(aws ssm get-parameter --name /starttech/dev/jwt_secret --with-decryption --query Parameter.Value --output text --region '"$REGION"')",
+    "DB_NAME=$(aws ssm get-parameter --name /starttech/dev/db_name --query Parameter.Value --output text --region '"$REGION"')",
+    "REDIS_HOST=$(aws ssm get-parameter --name /starttech/dev/redis_host --query Parameter.Value --output text --region '"$REGION"')",
 
-    "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 093796422475.dkr.ecr.us-east-1.amazonaws.com",
+    "aws ecr get-login-password --region '"$REGION"' | docker login --username AWS --password-stdin 093796422475.dkr.ecr.us-east-1.amazonaws.com",
 
     "docker system prune -af || true",
     "docker pull '"$IMAGE"'",

@@ -254,4 +254,4 @@ jobs:
       # =========================================
 
       - name: Deployment Success
-        run: echo "Backend deployment completed successfully!"
+        run: echo "Backend deployment completed successfully"
