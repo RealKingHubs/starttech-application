@@ -46,6 +46,7 @@ if [ -z "$INSTANCE_IDS" ]; then
   echo "Backend EC2 instances exist, but none are registered as SSM managed instances in region $REGION."
   echo "Expected backend tag: Name=$BACKEND_TAG_NAME"
   echo "EC2 instances found: $EC2_INSTANCE_IDS"
+  echo "This usually means the SSM agent is not registered yet or the instances need to be refreshed after a launch template/userdata change."
   exit 1
 fi
 
