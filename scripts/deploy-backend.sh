@@ -24,11 +24,23 @@ if [ -z "$EC2_INSTANCE_IDS" ]; then
   exit 1
 fi
 
-INSTANCE_IDS=$(aws ssm describe-instance-information \
+SSM_MANAGED_INSTANCE_IDS=$(aws ssm describe-instance-information \
   --region "$REGION" \
-  --filters "Key=InstanceIds,Values=$EC2_INSTANCE_IDS" \
   --query "InstanceInformationList[*].InstanceId" \
   --output text)
+
+INSTANCE_IDS=""
+
+for EC2_INSTANCE_ID in $EC2_INSTANCE_IDS; do
+  for SSM_INSTANCE_ID in $SSM_MANAGED_INSTANCE_IDS; do
+    if [ "$EC2_INSTANCE_ID" = "$SSM_INSTANCE_ID" ]; then
+      INSTANCE_IDS="$INSTANCE_IDS $EC2_INSTANCE_ID"
+      break
+    fi
+  done
+done
+
+INSTANCE_IDS="$(echo "$INSTANCE_IDS" | xargs)"
 
 if [ -z "$INSTANCE_IDS" ]; then
   echo "Backend EC2 instances exist, but none are registered as SSM managed instances in region $REGION."
